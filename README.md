@@ -1,2 +1,6 @@
-# alpaca-realtime-trading
-Project code for Realtime Intelligent Systems Final Project Phase 2: building a trading system on Alpaca
+# Alpaca Real-Time Trading System
+
+A Python-based real-time trading system using the Alpaca API for live market data and automated execution.
+
+Created for MS-ADS Realtime Intelligent Systems Final Project
+Winter 2026
