@@ -99,7 +99,9 @@ class DuolDataManager:
             )
             bars = self.client.get_stock_bars(request)
             df_new = bars.df.reset_index()
-
+            print(df_new.columns.tolist())  # temporary, remove after confirming
+            df_new = df_new[["timestamp", "open", "high", "low", "close", "volume"]]
+            
             if df_new.empty:
                 logging.info(f"No new {timeframe} bars to update")
                 return
