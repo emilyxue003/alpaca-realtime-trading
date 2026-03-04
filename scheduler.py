@@ -51,14 +51,14 @@ def refresh():
           f"Close={signal['latest_close']:.2f}")
 
     # 4. Execute trade based on signal -- Need to uncomment later 
-    # position = executor.get_position()
+    position = executor.get_position()
 
-    # if signal['action'] == "BUY" and position == 0:
-    #     executor.buy(qty=1)
-    # elif signal['action'] == "SELL" and position > 0:
-    #     executor.sell(qty=position)
-    # else:
-    #     logging.info(f"HOLD — position={position}, action={signal['action']}")
+    if signal['action'] == "BUY" and position == 0:
+        executor.buy(qty=1)
+    elif signal['action'] == "SELL" and position > 0:
+        executor.sell(qty=position)
+    else:
+        logging.info(f"HOLD — position={position}, action={signal['action']}")
 
 # Run at :05 past every hour
 schedule.every().hour.at(":05").do(refresh)

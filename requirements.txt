@@ -6,7 +6,3 @@ pytz
 pyarrow
 duckdb
 schedule
-alpaca-py
-duckdb
-python-dotenv
-pandas

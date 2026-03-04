@@ -22,8 +22,15 @@ def compute_signals(daily_df: pd.DataFrame, hourly_df: pd.DataFrame) -> dict:
     momentum = "buy" if latest_hourly['ema10'] > latest_hourly['ema20'] else "sell"
 
     # Volume confirmation
-    hourly['vol_avg'] = hourly['volume'].rolling(20).mean()
-    volume_ok = latest_hourly['volume'] > latest_hourly['vol_avg']
+    if len(hourly) >= 20:
+        hourly['vol_avg'] = hourly['volume'].rolling(20).mean()
+        volume_ok = latest_hourly['volume'] > hourly['vol_avg'].iloc[-1]
+    else:
+        volume_ok = True  # Not enough data yet
+    print(f"Hourly rows: {len(hourly)}, volume_ok: {volume_ok}")  # debug
+
+    # hourly['vol_avg'] = hourly['volume'].rolling(20).mean()
+    # volume_ok = latest_hourly['volume'] > latest_hourly['vol_avg']
 
     # Final action — both locks must open
     if trend == "bull" and momentum == "buy" and volume_ok:
