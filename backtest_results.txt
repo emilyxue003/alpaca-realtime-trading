@@ -1,0 +1,3 @@
+SMA20/50 Crossover
+Return: -29.9%
+Period: 1155 days

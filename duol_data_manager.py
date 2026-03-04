@@ -40,7 +40,7 @@ class DuolDataManager:
         }
         self.start_dates = {
             "daily": datetime(2021, 7, 28),  # DUOL IPO
-            "hourly": datetime.now() - timedelta(days=5),
+            "hourly": datetime(2021, 7, 28), # "hourly": datetime.now() - timedelta(days=5)
             "minute": datetime.now() - timedelta(days=5),
         }
         # DuckDB connection
