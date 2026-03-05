@@ -18,14 +18,23 @@ class TradeExecutor:
         self.symbol = "DUOL"
 
     def get_position(self):
-        """Returns current position qty, or 0 if none."""
+        """Returns current position qty and average entry price."""
         try:
             pos = self.client.get_open_position(self.symbol)
-            return float(pos.qty)
+            return float(pos.qty), float(pos.avg_entry_price)
         except Exception:
-            return 0
+            return 0, None
 
-    def buy(self, qty=1):
+    def get_cash(self):
+        """Returns the current available cash in the Alpaca account."""
+        try:
+            account = self.client.get_account()
+            return float(account.cash)
+        except Exception as e:
+            logging.error(f"Failed to fetch account balance: {e}")
+            return 0.0
+
+    def buy(self, qty):
         try:
             order = MarketOrderRequest(
                 symbol=self.symbol,
@@ -38,7 +47,7 @@ class TradeExecutor:
         except Exception as e:
             logging.error(f"BUY failed: {e}")
 
-    def sell(self, qty=1):
+    def sell(self, qty):
         try:
             order = MarketOrderRequest(
                 symbol=self.symbol,
