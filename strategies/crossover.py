@@ -10,8 +10,8 @@ def compute_signals(daily_df: pd.DataFrame, hourly_df: pd.DataFrame, entry_price
     hourly = hourly_df.copy()
 
     # Daily SMA — trend direction
-    daily['sma9'] = daily['close'].ewm(span=9).mean()
-    daily['sma21'] = daily['close'].ewm(span=21).mean()
+    daily['sma9'] = daily['close'].rolling(9).mean()
+    daily['sma21'] = daily['close'].rolling(21).mean()
     latest_daily = daily.iloc[-1]
     trend_strength = (latest_daily['sma9'] - latest_daily['sma21']) / latest_daily['sma21']
     # trend = "bull" if latest_daily['sma20'] > latest_daily['sma50'] else "bear"
