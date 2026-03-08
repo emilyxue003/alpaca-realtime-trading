@@ -47,8 +47,9 @@ def refresh():
 
     logging.info("--- Refresh triggered ---")
 
-    # 1. Pull fresh data into DuckDB
+    # 1. Pull fresh data into DuckDB (both daily and hourly needed for signals)
     manager = DuolDataManager()
+    manager.update_daily()
     manager.update_hourly()
 
     # 2. Fetch from DuckDB into DataFrames
