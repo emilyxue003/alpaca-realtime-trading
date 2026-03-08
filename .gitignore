@@ -134,6 +134,10 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Project data and logs (created at runtime on VM)
+data/
+logs/
+
 # Environments
 .env
 .envrc
