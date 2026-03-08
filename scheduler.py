@@ -1,4 +1,5 @@
 # scheduler.py
+import os
 import schedule
 import time
 import logging
@@ -10,6 +11,12 @@ from strategies.crossover import compute_signals
 from trading.executor import TradeExecutor
 
 DB_PATH = "data/trading.duckdb"
+
+# Ensure dirs exist for fresh VM / headless deployment
+os.makedirs("logs", exist_ok=True)
+os.makedirs("data/daily", exist_ok=True)
+os.makedirs("data/hourly", exist_ok=True)
+os.makedirs("data/minute", exist_ok=True)
 
 logging.basicConfig(
     filename="logs/scheduler.log",
