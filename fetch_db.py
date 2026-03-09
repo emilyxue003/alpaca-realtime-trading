@@ -18,7 +18,7 @@ def fetch_duol_bars(timeframe: str = "daily",
     Returns:
         pd.DataFrame: sorted DataFrame with timestamp as datetime
     """
-    con = duckdb.connect(DB_PATH, read_only=True)
+    con = duckdb.connect(DB_PATH)
     table_name = f"{timeframe}_duol"
     
     query = f"SELECT * FROM {table_name}"
