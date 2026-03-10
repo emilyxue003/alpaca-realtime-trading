@@ -1,5 +1,5 @@
 📊 BACKTESTING RESULTS
-Period: 2021-08-26 → 2026-03-04
-Final Value: $226,442.33
-Return: +126.4%
-Trades: 300
+Period: 2021-08-02 → 2026-03-09
+Final Value: $217,921.71
+Return: +117.9%
+Trades: 2120

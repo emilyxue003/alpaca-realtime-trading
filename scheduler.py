@@ -49,21 +49,32 @@ def refresh():
 
     # 1. Pull fresh data into DuckDB (both daily and hourly needed for signals)
     manager = DuolDataManager()
-    manager.update_daily()
     manager.update_hourly()
+    manager.update_minute()
 
     # 2. Fetch from DuckDB into DataFrames
-    daily_df  = fetch_duol_bars(timeframe="daily")
-    hourly_df = fetch_duol_bars(timeframe="hourly")
+    hourly_df  = fetch_duol_bars(timeframe="hourly")
+    minute_df = fetch_duol_bars(timeframe="minute")
+
+    # Resample minute to 15-minute blocks
+    minute_df.set_index('timestamp', inplace=True)
+    fifteen_df = minute_df.resample('15min').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }).dropna().reset_index()
 
     # 3. Ask Alpaca for our current shares and what we paid for them
     position, entry_price = executor.get_position()
 
     # 4. Compute signals
-    signal = compute_signals(daily_df, hourly_df, entry_price=entry_price)
+    signal = compute_signals(hourly_df, fifteen_df, entry_price=entry_price, position=position)
     
     # 5. Reset the cooldown if momentum drops to "sell"
-    if signal['momentum'] == 'sell':
+    if (signal['trend'] == 'bull' and signal['momentum'] == 'sell') or \
+       (signal['trend'] == 'bear' and signal['momentum'] == 'buy'):
         cooldown = False
 
     logging.info(f"[{datetime.now().strftime('%H:%M')}] Action: {signal['action']} | "
@@ -71,26 +82,31 @@ def refresh():
                  f"Close={signal['latest_close']:.2f} | Cooldown: {cooldown}")
 
     # 6. Execute trade based on signal
+    latest_price = signal['latest_close']
+    available_cash = executor.get_cash()
+    shares_to_trade = int((available_cash * 0.95) // latest_price)
+
     if signal['action'] == "BUY" and position == 0 and not cooldown:
-        available_cash = executor.get_cash()
-        latest_price = signal['latest_close']
-        shares_to_buy = int((available_cash * 0.95) // latest_price)
-        if shares_to_buy > 0:
-            executor.buy(qty=shares_to_buy)
-        else:
-            logging.info("Not enough cash to buy a full share.")
+        if shares_to_trade > 0:
+            executor.buy(qty=shares_to_trade)
+            
+    elif signal['action'] == "SHORT" and position == 0 and not cooldown:
+        if shares_to_trade > 0:
+            # Alpaca handles shorting automatically when you 'sell' shares you don't own
+            executor.sell(qty=shares_to_trade) 
+            
     elif signal['action'] == "SELL" and position > 0:
-        executor.sell(qty=position)
-        
-        # Trigger cooldown if we hit our profit or loss targets
+        executor.sell(qty=position) # Liquidate Long
         if signal.get('momentum') in ['take_profit', 'stop_loss']:
             cooldown = True
-            logging.info(f"Triggered {signal['momentum']}, entering cooldown.")
-    else:
-        logging.info(f"HOLD — position={position}, action={signal['action']}")
+            
+    elif signal['action'] == "COVER" and position < 0:
+        executor.buy(qty=abs(position)) # Buy back Short
+        if signal.get('momentum') in ['take_profit', 'stop_loss']:
+            cooldown = True
 
-# Run at :05 past every hour
-schedule.every().hour.at(":05").do(refresh)
+# Run every 15 minutes
+schedule.every(15).minutes.do(refresh)
 
 if __name__ == "__main__":
     print("Scheduler started. Waiting for next :05...")

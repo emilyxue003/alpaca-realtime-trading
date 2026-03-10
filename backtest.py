@@ -2,93 +2,114 @@ import pandas as pd
 from strategies.crossover import compute_signals
 from fetch_db import fetch_duol_bars
 
-print("🔄 Backtesting crossover.py (True Hourly Loop)")
+print("🔄 Backtesting crossover.py (15-Minute Short Scalp)")
 print("="*70)
 
 # Fetch data
-daily = fetch_duol_bars("daily")
 hourly = fetch_duol_bars("hourly")
+minute = fetch_duol_bars("minute")
 
-print(f"Daily:  {len(daily)} bars")
-print(f"Hourly: {len(hourly)} bars")
+# Resample 1-minute data into 15-minute blocks
+minute.set_index('timestamp', inplace=True)
+fifteen_min = minute.resample('15min').agg({
+    'open': 'first',
+    'high': 'max',
+    'low': 'min',
+    'close': 'last',
+    'volume': 'sum'
+}).dropna().reset_index()
 
 cash = 100000.0
-shares = 0.0
+shares = 0  
 trades = 0
 entry_price = None
 cooldown = False
 
-# We need 21 daily bars to calculate the SMA21. 
-# Find the date of the 21th day to start our hourly loop there.
-if len(daily) < 21:
-    print("Not enough daily data.")
+if len(hourly) < 21:
+    print("Not enough hourly data.")
     exit()
 
-start_ts = daily['timestamp'].iloc[21]
+# Custom start date if we want to test shorter periods
+custom_start = pd.to_datetime("2021-07-28")
+warmup_date = hourly['timestamp'].iloc[21]
+start_ts = max(warmup_date, custom_start)
 
-# Filter our test loop to only include hours after the 21-day warm-up
-hourly_test = hourly[hourly['timestamp'] >= start_ts].reset_index(drop=True)
+fifteen_test = fifteen_min[fifteen_min['timestamp'] >= start_ts].reset_index(drop=True)
 
-print(f"Starting hourly simulation from {start_ts} (approx {len(hourly_test)} hours to process...)")
+print(f"Starting 15-min simulation from {start_ts} (approx {len(fifteen_test)} periods to process...)")
 
-# THE NEW LOOP: Iterate through every hour
-for i in range(len(hourly_test)):
-    current_ts = hourly_test['timestamp'].iloc[i]
+# Iterate through every 15-minute chunk
+for i in range(len(fifteen_test)):
+    current_ts = fifteen_test['timestamp'].iloc[i]
     
-    # 1. Create slices of history UP TO this exact hour
-    # This prevents the algorithm from seeing the future
-    hourly_slice = hourly[hourly['timestamp'] <= current_ts]
-    daily_slice = daily[daily['timestamp'] <= current_ts]
+    # Create slices UP TO this exact time. Add Timedelta to prevent Hourly future-leakage!
+    hourly_slice = hourly[hourly['timestamp'] + pd.Timedelta(hours=1) <= current_ts]
+    fifteen_slice = fifteen_min[fifteen_min['timestamp'] <= current_ts]
     
-    # 2. Get signal from your exact crossover.py logic
-    signal = compute_signals(daily_slice, hourly_slice, entry_price=entry_price)
-    
-    # Use the current hour's close price to execute trades
-    price = hourly_test['close'].iloc[i]
+    if len(hourly_slice) < 21:
+        continue # Wait for the SMA warm-up
 
-    # If the MACD crosses down, the cooldown is officially over
-    if signal['momentum'] == 'sell':
+    signal = compute_signals(hourly_slice, fifteen_slice, entry_price=entry_price, position=shares)
+    price = fifteen_test['close'].iloc[i]
+
+    # Reset cooldown on natural flip
+    if (signal['trend'] == 'bull' and signal['momentum'] == 'sell') or \
+       (signal['trend'] == 'bear' and signal['momentum'] == 'buy'):
         cooldown = False
     
-    # 3. Execute Actions
+    # Execute Actions
     if signal['action'] == 'BUY' and shares == 0 and not cooldown:
-        # Buy whole shares with 95% of cash
-        shares = (cash * 0.95) // price 
-        if shares > 0:
+        qty = int((cash * 0.95) // price)
+        if qty > 0:
+            shares = qty
             cash -= shares * price
             trades += 1
             entry_price = price
-            print(f"[{current_ts}] BUY  {signal['trend']}/{signal['momentum']} @ ${price:.2f}")
-        
+            print(f"[{current_ts}] BUY (Long)  {signal['trend']}/{signal['momentum']} @ ${price:.2f}")
+            
+    elif signal['action'] == 'SHORT' and shares == 0 and not cooldown:
+        qty = int((cash * 0.95) // price)
+        if qty > 0:
+            shares = -qty  
+            cash += abs(shares) * price  
+            trades += 1
+            entry_price = price
+            print(f"[{current_ts}] SHORT       {signal['trend']}/{signal['momentum']} @ ${price:.2f}")
+            
     elif signal['action'] == 'SELL' and shares > 0:
         cash += shares * price
         shares = 0
         trades += 1
         entry_price = None
-
-        # 4. NEW LOGIC: Trigger cooldown on special exits
-        if signal.get('momentum') == 'take_profit':
+        if signal.get('momentum') in ['take_profit', 'stop_loss']:
             cooldown = True
-            print(f"[{current_ts}] SELL TAKE PROFIT @ ${price:.2f} (Cooldown Active)")
-        elif signal.get('momentum') == 'stop_loss':
-            cooldown = True
-            print(f"[{current_ts}] SELL STOP LOSS @ ${price:.2f} (Cooldown Active)")
+            print(f"[{current_ts}] SELL (Close) {signal['momentum'].upper()} @ ${price:.2f} (Cooldown Active)")
         else:
-            print(f"[{current_ts}] SELL {signal['trend']}/{signal['momentum']} @ ${price:.2f}")
+            print(f"[{current_ts}] SELL (Close) {signal['trend']}/{signal['momentum']} @ ${price:.2f}")
 
-# Calculate final metrics
-final_value = cash + (shares * hourly_test['close'].iloc[-1])
+    elif signal['action'] == 'COVER' and shares < 0:
+        cash -= abs(shares) * price  
+        shares = 0
+        trades += 1
+        entry_price = None
+        if signal.get('momentum') in ['take_profit', 'stop_loss']:
+            cooldown = True
+            print(f"[{current_ts}] COVER       {signal['momentum'].upper()} @ ${price:.2f} (Cooldown Active)")
+        else:
+            print(f"[{current_ts}] COVER       {signal['trend']}/{signal['momentum']} @ ${price:.2f}")
+
+final_value = cash + (shares * fifteen_test['close'].iloc[-1])
 total_return = (final_value / 100000 - 1) * 100
 
 print("\n📊 BACKTESTING RESULTS")
-print(f"Period: {hourly_test['timestamp'].iloc[0]:%Y-%m-%d} → {hourly_test['timestamp'].iloc[-1]:%Y-%m-%d}")
+print(f"Period: {fifteen_test['timestamp'].iloc[0]:%Y-%m-%d} → {fifteen_test['timestamp'].iloc[-1]:%Y-%m-%d}")
 print(f"Final Value: ${final_value:,.2f}")
 print(f"Return: {total_return:+.1f}%")
 print(f"Trades: {trades}")
 
 with open('backtest_results.txt', 'w') as f:
     f.write("📊 BACKTESTING RESULTS\n")
-    f.write(f"Period: {hourly_test['timestamp'].iloc[0]:%Y-%m-%d} → {hourly_test['timestamp'].iloc[-1]:%Y-%m-%d}\n")
+    f.write(f"Period: {fifteen_test['timestamp'].iloc[0]:%Y-%m-%d} → {fifteen_test['timestamp'].iloc[-1]:%Y-%m-%d}\n")
     f.write(f"Final Value: ${final_value:,.2f}\n")
     f.write(f"Return: {total_return:+.1f}%\n")
     f.write(f"Trades: {trades}\n")

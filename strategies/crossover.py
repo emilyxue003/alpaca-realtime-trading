@@ -1,76 +1,70 @@
 # strategies/crossover.py
 import pandas as pd
 
-def compute_signals(daily_df: pd.DataFrame, hourly_df: pd.DataFrame, entry_price: float = None) -> dict:
+def compute_signals(hourly_df: pd.DataFrame, fifteen_df: pd.DataFrame, entry_price: float = None, position: int = 0) -> dict:
     """
-    Computes SMA crossover (daily) and EMA crossover (hourly).
+    Computes SMA crossover (hourly) and EMA crossover (15-minute).
     Returns a signal dict with trend, momentum, and final action.
     """
-    daily = daily_df.copy()
     hourly = hourly_df.copy()
+    fifteen = fifteen_df.copy()
 
-    # Daily SMA — trend direction
-    daily['sma9'] = daily['close'].rolling(9).mean()
-    daily['sma21'] = daily['close'].rolling(21).mean()
-    latest_daily = daily.iloc[-1]
-    trend_strength = (latest_daily['sma9'] - latest_daily['sma21']) / latest_daily['sma21']
-    # trend = "bull" if latest_daily['sma20'] > latest_daily['sma50'] else "bear"
+    # 1. Hourly SMA — Macro Trend
+    hourly['sma9'] = hourly['close'].rolling(9).mean()
+    hourly['sma21'] = hourly['close'].rolling(21).mean()
+    latest_hourly = hourly.iloc[-1]
+    trend_strength = (latest_hourly['sma9'] - latest_hourly['sma21']) / latest_hourly['sma21']
     trend = "bull" if trend_strength > 0 else "bear"
 
-    # Hourly EMA — entry timing
-    hourly['ema12'] = hourly['close'].ewm(span=12).mean() # Faster EMA
-    hourly['ema26'] = hourly['close'].ewm(span=26).mean()
-    hourly['macd'] = hourly['ema12'] - hourly['ema26'] # Raw momentum (MACD Line)
-    hourly['macd_signal'] = hourly['macd'].ewm(span=9).mean() # 9-period EMA (Signal Line)
-    latest_hourly = hourly.iloc[-1]
-    momentum_strength = latest_hourly['macd'] - latest_hourly['macd_signal']
-    # momentum = "buy" if latest_hourly['ema10'] > latest_hourly['ema20'] else "sell"
+    # 2. 15-Minute EMA — Micro Momentum
+    fifteen['ema12'] = fifteen['close'].ewm(span=12).mean() 
+    fifteen['ema26'] = fifteen['close'].ewm(span=26).mean()
+    fifteen['macd'] = fifteen['ema12'] - fifteen['ema26'] 
+    fifteen['macd_signal'] = fifteen['macd'].ewm(span=9).mean() 
+    latest_fifteen = fifteen.iloc[-1]
+    momentum_strength = latest_fifteen['macd'] - latest_fifteen['macd_signal']
     momentum = "buy" if momentum_strength > 0 else "sell"
 
-    # Volume confirmation
-    if len(hourly) >= 10:
-        vol_median = hourly['volume'].median()
-        volume_ok = latest_hourly['volume'] > vol_median
+    # 3. Volume Confirmation (Checked against 15-min median)
+    if len(fifteen) >= 10:
+        vol_median = fifteen['volume'].median()
+        volume_ok = latest_fifteen['volume'] > vol_median
     else:
         volume_ok = True
 
-    # if len(hourly) >= 20:
-        # hourly['vol_avg'] = hourly['volume'].rolling(20).mean()
-        # volume_ok = latest_hourly['volume'] > hourly['vol_avg'].iloc[-1]
-    # else:
-        # volume_ok = True  # Not enough data yet
-    # print(f"Hourly rows: {len(hourly)}, volume_ok: {volume_ok}")  # debug
-
-    # hourly['vol_avg'] = hourly['volume'].rolling(20).mean()
-    # volume_ok = latest_hourly['volume'] > latest_hourly['vol_avg']
-
-    latest_close = latest_hourly['close']
+    latest_close = latest_fifteen['close']
     stop_loss_triggered = False
     take_profit_triggered = False
 
-    if entry_price is not None:
-        # Hard Stop Loss Logic (5% drop)
-        if latest_close <= (entry_price * 0.95):
-            stop_loss_triggered = True
-            
-        # 2. NEW LOGIC: Take Profit (6% gain)
-        if latest_close >= (entry_price * 1.06):
-            take_profit_triggered = True
+    # 4. Strict Risk Management (Scalping Parameters)
+    if entry_price is not None and position != 0:
+        if position > 0: 
+            # LONG EXITS (2% SL, 3% TP)
+            if latest_close <= (entry_price * 0.98): stop_loss_triggered = True 
+            if latest_close >= (entry_price * 1.03): take_profit_triggered = True  
+        elif position < 0:
+            # SHORT EXITS (1.5% SL, 3% TP)
+            if latest_close >= (entry_price * 1.015): stop_loss_triggered = True  
+            if latest_close <= (entry_price * 0.97): take_profit_triggered = True  
 
-    # Final action — both locks must open
+    # 5. Final Action Logic
     if stop_loss_triggered:
-        action = "SELL"
-        momentum = "stop_loss" # Flag this to see it in the logs
+        action = "SELL" if position > 0 else "COVER"
+        momentum = "stop_loss"
     elif take_profit_triggered:
-        action = "SELL"
-        momentum = "take_profit" # Flag this to see the wins in the logs
-    elif momentum == "sell":
-        if volume_ok:
-            action = "SELL" # Prioritize getting out if ST momentum breaks
+        action = "SELL" if position > 0 else "COVER"
+        momentum = "take_profit"
+    elif position > 0 and momentum == "sell" and volume_ok:
+        action = "SELL"   
+    elif position < 0 and momentum == "buy" and volume_ok:
+        action = "COVER"  
+    elif position == 0:
+        if trend == "bull" and momentum == "buy":
+            action = "BUY"    
+        elif trend == "bear" and momentum == "sell":
+            action = "SHORT"  
         else:
-            action = "HOLD" # Don't sell yet, but definitely don't buy
-    elif trend == "bull" and momentum == "buy": # removed "and volume_ok"
-        action = "BUY"
+            action = "HOLD"
     else:
         action = "HOLD"
 
@@ -79,11 +73,5 @@ def compute_signals(daily_df: pd.DataFrame, hourly_df: pd.DataFrame, entry_price
         "momentum": momentum,
         "volume_ok": volume_ok,
         "action": action,
-        "trend_strength": trend_strength,
-        "momentum_strength": momentum_strength,
         "latest_close": latest_close
-        # "sma20": latest_daily['sma20'],
-        # "sma50": latest_daily['sma50'],
-        # "ema10": latest_hourly['ema10'],
-        # "ema20": latest_hourly['ema20'],
     }
