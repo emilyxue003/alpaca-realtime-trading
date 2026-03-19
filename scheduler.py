@@ -109,7 +109,7 @@ def refresh():
 schedule.every(15).minutes.do(refresh)
 
 if __name__ == "__main__":
-    print("Scheduler started. Waiting for next :05...")
+    print("Scheduler started. Running on 15-minute intervals...")
     refresh()  # run once immediately on start
     while True:
         schedule.run_pending()
