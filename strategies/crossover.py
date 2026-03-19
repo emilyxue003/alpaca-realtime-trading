@@ -1,7 +1,12 @@
 # strategies/crossover.py
 import pandas as pd
 
-def compute_signals(hourly_df: pd.DataFrame, fifteen_df: pd.DataFrame, entry_price: float = None, position: int = 0) -> dict:
+def compute_signals(hourly_df: pd.DataFrame, 
+                    fifteen_df: pd.DataFrame, 
+                    entry_price: float = None, 
+                    position: int = 0, 
+                    sma_fast: int = 20, 
+                    sma_slow: int = 50) -> dict: 
     """
     Computes SMA crossover (hourly) and EMA crossover (15-minute).
     Returns a signal dict with trend, momentum, and final action.
@@ -10,10 +15,10 @@ def compute_signals(hourly_df: pd.DataFrame, fifteen_df: pd.DataFrame, entry_pri
     fifteen = fifteen_df.copy()
 
     # 1. Hourly SMA — Macro Trend
-    hourly['sma9'] = hourly['close'].rolling(9).mean()
-    hourly['sma21'] = hourly['close'].rolling(21).mean()
+    hourly['sma_fast'] = hourly['close'].rolling(sma_fast).mean()
+    hourly['sma_slow'] = hourly['close'].rolling(sma_slow).mean()
     latest_hourly = hourly.iloc[-1]
-    trend_strength = (latest_hourly['sma9'] - latest_hourly['sma21']) / latest_hourly['sma21']
+    trend_strength = (latest_hourly['sma_fast'] - latest_hourly['sma_slow']) / latest_hourly['sma_slow']
     trend = "bull" if trend_strength > 0 else "bear"
 
     # 2. 15-Minute EMA — Micro Momentum
@@ -59,9 +64,9 @@ def compute_signals(hourly_df: pd.DataFrame, fifteen_df: pd.DataFrame, entry_pri
     elif position < 0 and momentum == "buy" and volume_ok:
         action = "COVER"  
     elif position == 0:
-        if trend == "bull" and momentum == "buy":
+        if trend == "bull" and momentum == "buy" and volume_ok:
             action = "BUY"    
-        elif trend == "bear" and momentum == "sell":
+        elif latest_close < latest_hourly['sma_fast'] and momentum == "sell" and volume_ok:
             action = "SHORT"  
         else:
             action = "HOLD"
